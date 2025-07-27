@@ -35,6 +35,66 @@ Follow these steps to get the application running locally for development and te
     1.  Navigate to the `backend/` directory.
     2.  Create a file named `.env` by copying the `backend/.env.example` file.
     3.  Open the `.env` file and add your Gemini API key: `GEMINI_API_KEY="YOUR_ACTUAL_API_KEY"`
+    4.  # YouTube Integration Setup
+
+## Quick Setup Steps
+
+### 1.1 Get YouTube API Key
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable the **YouTube Data API v3**
+4. Go to "Credentials" → "Create Credentials" → "API Key"
+5. Copy your API key
+
+### 1.2 Update Environment Variables
+Add to your `backend/.env` file:
+```bash
+# Existing
+GEMINI_API_KEY="your_existing_gemini_key"
+
+# New - YouTube Integration
+YOUTUBE_API_KEY="your_youtube_api_key_here"
+```
+
+### 1.3 Install Dependencies
+No new dependencies needed! The YouTube integration uses the existing `requests` library.
+
+### 1.4 Test Voice Commands
+Try these example voice commands:
+- **"Show me videos about machine learning"**
+- **"Find Python tutorial videos"**
+- **"Search for jazz music videos"**
+- **"Show me cooking videos"**
+
+## How It Works
+
+### Intent Classification
+The agent now automatically detects when you want YouTube videos vs research:
+
+- **Research Intent**: "Tell me about quantum computing"
+- **YouTube Intent**: "Show me videos about quantum computing"
+- **Mixed Intent**: "Explain quantum computing and show me tutorial videos"
+
+### Voice Command Examples
+
+| Voice Input | Intent | Result |
+|-------------|--------|---------|
+| "Show me Python tutorials" | YouTube | YouTube video search results |
+| "What is machine learning?" | Research | Web research with citations |
+| "Find jazz music videos" | YouTube | YouTube music videos |
+| "Explain AI and show me demos" | Mixed | Research + YouTube videos |
+
+## Architecture
+
+```
+Voice Input → Intent Classification → YouTube Search OR Web Research
+                     ↓
+              YouTube Results Component
+                     ↓
+              Embedded Video Player
+```
+
+The integration extends the existing LangGraph agent with a new branch for YouTube actions while keeping all your research capabilities intact.
 
 **2. Install Dependencies:**
 
