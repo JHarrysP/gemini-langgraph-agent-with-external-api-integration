@@ -1,10 +1,10 @@
-import type React from "react";
+import React from "react";
 import type { Message } from "@langchain/langgraph-sdk";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Copy, CopyCheck } from "lucide-react";
 import { InputForm } from "@/components/InputForm";
 import { Button } from "@/components/ui/button";
-import { useState, ReactNode } from "react";
+import { useState, ReactNode, useCallback, useMemo } from "react";
 import { YouTubeResults } from "@/components/YouTubeResults"; // Import YouTubeResults component
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
@@ -142,7 +142,7 @@ interface HumanMessageBubbleProps {
 }
 
 // HumanMessageBubble Component
-const HumanMessageBubble: React.FC<HumanMessageBubbleProps> = ({
+const HumanMessageBubble: React.FC<HumanMessageBubbleProps> = React.memo(({
   message,
   mdComponents,
 }) => {
@@ -157,7 +157,7 @@ const HumanMessageBubble: React.FC<HumanMessageBubbleProps> = ({
       </ReactMarkdown>
     </div>
   );
-};
+});
 
 // Props for AiMessageBubble
 interface AiMessageBubbleProps {
@@ -170,10 +170,11 @@ interface AiMessageBubbleProps {
   handleCopy: (text: string, messageId: string) => void;
   copiedMessageId: string | null;
   youtubeResults?: any; // Add YouTube results prop
+  messageIndex: number; // Add message index for stable keys
 }
 
-// AiMessageBubble Component (updated)
-const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
+// AiMessageBubble Component (updated and memoized)
+const AiMessageBubble: React.FC<AiMessageBubbleProps> = React.memo(({
   message,
   historicalActivity,
   liveActivity,
@@ -183,14 +184,29 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
   handleCopy,
   copiedMessageId,
   youtubeResults,
+  messageIndex,
 }) => {
   // Determine which activity events to show and if it's for a live loading message
-  const activityForThisBubble =
-    isLastMessage && isOverallLoading ? liveActivity : historicalActivity;
+  const activityForThisBubble = useMemo(() => {
+    return isLastMessage && isOverallLoading ? liveActivity : historicalActivity;
+  }, [isLastMessage, isOverallLoading, liveActivity, historicalActivity]);
+  
   const isLiveActivityForThisBubble = isLastMessage && isOverallLoading;
 
-  // Show YouTube results for the last AI message if available
-  const shouldShowYouTube = isLastMessage && youtubeResults && youtubeResults.videos?.length > 0;
+  // Fixed: More stable YouTube results determination
+  const shouldShowYouTube = useMemo(() => {
+    return isLastMessage && 
+           youtubeResults && 
+           youtubeResults.videos && 
+           Array.isArray(youtubeResults.videos) && 
+           youtubeResults.videos.length > 0;
+  }, [isLastMessage, youtubeResults]);
+
+  const messageContent = useMemo(() => {
+    return typeof message.content === "string"
+      ? message.content
+      : JSON.stringify(message.content);
+  }, [message.content]);
 
   return (
     <div className={`relative break-words flex flex-col space-y-4`}>
@@ -203,9 +219,9 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
         </div>
       )}
       
-      {/* YouTube Results */}
+      {/* YouTube Results - Fixed: Better conditional rendering */}
       {shouldShowYouTube && (
-        <div className="mb-4">
+        <div className="mb-4" key={`youtube-${messageIndex}-${youtubeResults.timestamp || 'default'}`}>
           <YouTubeResults results={youtubeResults} />
         </div>
       )}
@@ -213,21 +229,12 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
       {/* Message Content */}
       <div>
         <ReactMarkdown components={mdComponents}>
-          {typeof message.content === "string"
-            ? message.content
-            : JSON.stringify(message.content)}
+          {messageContent}
         </ReactMarkdown>
         <Button
           variant="default"
           className="cursor-pointer bg-neutral-700 border-neutral-600 text-neutral-300 self-end mt-3"
-          onClick={() =>
-            handleCopy(
-              typeof message.content === "string"
-                ? message.content
-                : JSON.stringify(message.content),
-              message.id!
-            )
-          }
+          onClick={() => handleCopy(messageContent, message.id!)}
         >
           {copiedMessageId === message.id ? "Copied" : "Copy"}
           {copiedMessageId === message.id ? <CopyCheck /> : <Copy />}
@@ -235,7 +242,7 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
       </div>
     </div>
   );
-};
+});
 
 interface ChatMessagesViewProps {
   messages: Message[];
@@ -260,7 +267,7 @@ export function ChatMessagesView({
 }: ChatMessagesViewProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
-  const handleCopy = async (text: string, messageId: string) => {
+  const handleCopy = useCallback(async (text: string, messageId: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedMessageId(messageId);
@@ -268,43 +275,54 @@ export function ChatMessagesView({
     } catch (err) {
       console.error("Failed to copy text: ", err);
     }
-  };
+  }, []);
+
+  // Fixed: Memoize messages to prevent unnecessary re-renders
+  const memoizedMessages = useMemo(() => {
+    return messages.map((message, index) => {
+      const isLast = index === messages.length - 1;
+      return {
+        message,
+        index,
+        isLast,
+        key: `${message.id || `msg-${index}`}-${message.type}-${index}`
+      };
+    });
+  }, [messages]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <ScrollArea className="flex-1 min-h-0" ref={scrollAreaRef}>
         <div className="p-4 md:p-6 pb-2 space-y-2 max-w-4xl mx-auto">
-          {messages.map((message, index) => {
-            const isLast = index === messages.length - 1;
-            return (
-              <div key={message.id || `msg-${index}`} className="space-y-3">
-                <div
-                  className={`flex items-start gap-3 ${
-                    message.type === "human" ? "justify-end" : ""
-                  }`}
-                >
-                  {message.type === "human" ? (
-                    <HumanMessageBubble
-                      message={message}
-                      mdComponents={mdComponents}
-                    />
-                  ) : (
-                    <AiMessageBubble
-                      message={message}
-                      historicalActivity={historicalActivities[message.id!]}
-                      liveActivity={liveActivityEvents}
-                      isLastMessage={isLast}
-                      isOverallLoading={isLoading}
-                      mdComponents={mdComponents}
-                      handleCopy={handleCopy}
-                      copiedMessageId={copiedMessageId}
-                      youtubeResults={isLast ? youtubeResults : undefined} // Only show YouTube for last message
-                    />
-                  )}
-                </div>
+          {memoizedMessages.map(({ message, index, isLast, key }) => (
+            <div key={key} className="space-y-3">
+              <div
+                className={`flex items-start gap-3 ${
+                  message.type === "human" ? "justify-end" : ""
+                }`}
+              >
+                {message.type === "human" ? (
+                  <HumanMessageBubble
+                    message={message}
+                    mdComponents={mdComponents}
+                  />
+                ) : (
+                  <AiMessageBubble
+                    message={message}
+                    historicalActivity={historicalActivities[message.id!]}
+                    liveActivity={liveActivityEvents}
+                    isLastMessage={isLast}
+                    isOverallLoading={isLoading}
+                    mdComponents={mdComponents}
+                    handleCopy={handleCopy}
+                    copiedMessageId={copiedMessageId}
+                    youtubeResults={isLast ? youtubeResults : undefined} // Only show YouTube for last message
+                    messageIndex={index}
+                  />
+                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
           {isLoading &&
             (messages.length === 0 ||
               messages[messages.length - 1].type === "human") && (

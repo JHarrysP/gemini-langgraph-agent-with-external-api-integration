@@ -21,6 +21,9 @@ class OverallState(TypedDict):
     research_loop_count: int
     reasoning_model: str
     
+    # Fixed: Use Annotated with operator.add for query_list to handle multiple values
+    query_list: Annotated[list, operator.add]
+    
     # NEW: YouTube and intent fields
     intent_type: str  # "research", "youtube", or "mixed"
     confidence: float
@@ -42,7 +45,8 @@ class Query(TypedDict):
 
 
 class QueryGenerationState(TypedDict):
-    query_list: list[Query]
+    # Fixed: Use Annotated with operator.add to handle multiple query generations
+    query_list: Annotated[list, operator.add]
 
 
 class WebSearchState(TypedDict):

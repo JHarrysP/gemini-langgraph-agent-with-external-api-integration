@@ -143,8 +143,8 @@ def route_after_intent(state: OverallState) -> str:
         return "generate_query"
 
 
-# EXISTING NODES (Complete functions)
-def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerationState:
+# FIXED: Generate Query Node
+def generate_query(state: OverallState, config: RunnableConfig) -> OverallState:
     """LangGraph node that generates search queries based on the User's question."""
     from agent.tools_and_schemas import SearchQueryList
 
@@ -176,11 +176,12 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
 
     result = structured_llm.invoke(formatted_prompt)
 
-    return {"query_list": result.query}  # ⬅ Match expected key
+    # Fixed: Return the queries directly as a list for the Annotated field
+    return {"query_list": result.query}
 
 
-
-def continue_to_web_research(state: QueryGenerationState):
+def continue_to_web_research(state: OverallState):
+    """Fixed: Get queries from the properly annotated query_list"""
     queries = state.get("query_list", [])
     if not isinstance(queries, list):
         queries = [queries] if queries else []
@@ -191,22 +192,20 @@ def continue_to_web_research(state: QueryGenerationState):
     ]
 
 
-
-
 def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     try:
         configurable = Configuration.from_runnable_config(config)
 
-        # Safely alias query input
-        search_query_raw = state.get("query_list") or state.get("search_query")
-        if not search_query_raw:
-            raise ValueError("Missing 'query_list' or 'search_query' in state.")
+        # Fixed: Only use search_query from WebSearchState
+        search_query = state.get("search_query")
+        if not search_query:
+            raise ValueError("Missing 'search_query' in state.")
 
         # Normalize to string
-        if isinstance(search_query_raw, list):
-            search_query = ", ".join(search_query_raw)
+        if isinstance(search_query, list):
+            search_query = ", ".join(search_query)
         else:
-            search_query = str(search_query_raw)
+            search_query = str(search_query)
 
         formatted_prompt = web_searcher_instructions.format(
             current_date=get_current_date(),
@@ -226,7 +225,7 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         if not grounding:
             return {
                 "sources_gathered": [],
-                "query_list": [search_query],  # Echo back normalized key
+                "search_query": [search_query],  # Use search_query instead of query_list
                 "web_research_result": [response.text],
             }
 
@@ -237,7 +236,7 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
 
         return {
             "sources_gathered": sources_gathered,
-            "query_list": [search_query],
+            "search_query": [search_query],  # Use search_query instead of query_list
             "web_research_result": [modified_text],
         }
 
@@ -245,10 +244,9 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
         print(f"Error in web_research: {e}")
         return {
             "sources_gathered": [],
-            "query_list": [state.get("query_list", "unknown")],
+            "search_query": [state.get("search_query", "unknown")],
             "web_research_result": [f"Error performing web research: {str(e)}"],
         }
-
 
 
 def reflection(state: OverallState, config: RunnableConfig) -> ReflectionState:
@@ -349,7 +347,7 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     }
 
 # Create our Agent Graph
-builder = StateGraph(OverallState, QueryGenerationState)
+builder = StateGraph(OverallState)
 
 # Add all nodes
 builder.add_node("classify_intent", classify_intent)

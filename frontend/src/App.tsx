@@ -1,4 +1,4 @@
-// frontend/src/App.tsx (Updated sections)
+// frontend/src/App.tsx (Fixed version)
 import { useStream } from "@langchain/langgraph-sdk/react";
 import type { Message } from "@langchain/langgraph-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -13,7 +13,9 @@ export default function App() {
   const [historicalActivities, setHistoricalActivities] = useState<
     Record<string, ProcessedEvent[]>
   >({});
+  // Fixed: Use a more stable state structure for YouTube results
   const [youtubeResults, setYoutubeResults] = useState<any>(null);
+  const [currentThreadId, setCurrentThreadId] = useState<string>("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const hasFinalizeEventOccurredRef = useRef(false);
 
@@ -31,7 +33,7 @@ export default function App() {
     assistantId: "agent",
     messagesKey: "messages",
     onFinish: (event: any) => {
-      console.log(event);
+      console.log("Thread finished:", event);
     },
     onUpdateEvent: (event: any) => {
       let processedEvent: ProcessedEvent | null = null;
@@ -45,14 +47,20 @@ export default function App() {
         };
       }
       
-      // Handle YouTube action
+      // Handle YouTube action - Fixed: More stable YouTube result handling
       else if (event.youtube_action) {
         const results = event.youtube_action.youtube_results;
-        if (results) {
-          setYoutubeResults(results);
+        if (results && results.videos && results.videos.length > 0) {
+          // Fixed: Store YouTube results with a unique identifier to prevent disappearing
+          const stableResults = {
+            ...results,
+            timestamp: Date.now(),
+            threadId: currentThreadId
+          };
+          setYoutubeResults(stableResults);
           processedEvent = {
             title: "YouTube Search",
-            data: `Found ${results.videos?.length || 0} videos for "${results.query}"`,
+            data: `Found ${results.videos.length} videos for "${results.query}"`,
           };
         } else {
           processedEvent = {
@@ -64,9 +72,11 @@ export default function App() {
       
       // Existing event handlers
       else if (event.generate_query) {
+        const queries = event.generate_query.query_list || [];
+        const queryString = Array.isArray(queries) ? queries.join(", ") : String(queries);
         processedEvent = {
           title: "Generating Search Queries",
-          data: event.generate_query.query_list.join(", "),
+          data: queryString,
         };
       } else if (event.web_research) {
         const sources = event.web_research.sources_gathered || [];
@@ -138,8 +148,16 @@ export default function App() {
   const handleSubmit = useCallback(
     (submittedInputValue: string, effort: string, model: string) => {
       if (!submittedInputValue.trim()) return;
+      
+      // Fixed: Generate a unique thread ID to track YouTube results
+      const newThreadId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setCurrentThreadId(newThreadId);
+      
       setProcessedEventsTimeline([]);
-      setYoutubeResults(null); // Reset YouTube results
+      // Fixed: Don't reset YouTube results immediately, let them persist until new ones arrive
+      if (!thread.isLoading) {
+        setYoutubeResults(null);
+      }
       hasFinalizeEventOccurredRef.current = false;
 
       // convert effort to, initial_search_query_count and max_research_loops
@@ -175,11 +193,14 @@ export default function App() {
         reasoning_model: model,
       });
     },
-    [thread]
+    [thread, currentThreadId]
   );
 
   const handleCancel = useCallback(() => {
     thread.stop();
+    // Fixed: Reset YouTube results when cancelling
+    setYoutubeResults(null);
+    setCurrentThreadId("");
     window.location.reload();
   }, [thread]);
 
@@ -201,7 +222,7 @@ export default function App() {
               onCancel={handleCancel}
               liveActivityEvents={processedEventsTimeline}
               historicalActivities={historicalActivities}
-              youtubeResults={youtubeResults} // Pass YouTube results
+              youtubeResults={youtubeResults} // Pass stable YouTube results
             />
           )}
       </main>
